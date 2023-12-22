@@ -95,6 +95,9 @@ class CartService {
     }
     return removeProduct;
   }
+
+  static async updateProductAmount({ userId, product }) {}
+
   // Delete
   static async deleteUserCart({ userId }) {
     const foundCart = await getCartByUserId({ userId });
