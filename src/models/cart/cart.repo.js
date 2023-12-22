@@ -39,19 +39,33 @@ const addOrCreateCartWithOrder = async ({ userId, shopId }) => {
 };
 
 // Update
-const updateProductQuantity = async ({ userId, product }) => {
-  const { _id, product_quantity } = product;
+const updateProductQuantity = async ({
+  userId,
+  productId,
+  shopId,
+  inc_quantity,
+}) => {
   const query = {
     cart_userId: userId,
-    "cart_products.product_id": _id,
+    "cart_orders.order_shopId": shopId,
+    "cart_orders.order_products.product_id": productId,
     cart_state: CartStateEnum.ACTIVE,
   };
   const updateSet = {
     $inc: {
-      "cart_products.$.product_quantity": product_quantity,
+      "cart_orders.$[orderElem].order_products.$[productElem].product_quantity":
+        inc_quantity,
+      "cart_orders.$[orderElem].order_products.$[productElem].product_old_quantity":
+        inc_quantity,
     },
   };
-  const options = { new: true };
+  const options = {
+    arrayFilters: [
+      { "orderElem.order_shopId": shopId },
+      { "productElem.product_id": productId },
+    ],
+    new: true,
+  };
   return await cartModel.findOneAndUpdate(query, updateSet, options);
 };
 
@@ -111,7 +125,7 @@ const addProductToOrderProducts = async ({ userId, product }) => {
 };
 
 const removeProductFromUserCart = async ({ userId, productId, shopId }) => {
-  const removeProductFromCart = await cartModel.updateOne(
+  const removeProductFromCart = await cartModel.findOneAndUpdate(
     {
       cart_userId: userId,
       "cart_orders.order_shopId": shopId,
@@ -135,7 +149,7 @@ const removeProductFromUserCart = async ({ userId, productId, shopId }) => {
   }
 
   // Remove the entire order_products array if it's empty
-  const removeEmptyOrderProducts = await cartModel.updateOne(
+  const removeEmptyOrderProducts = await cartModel.findOneAndUpdate(
     {
       cart_userId: convertToObjectIdMongoDB(userId),
       cart_state: CartStateEnum.ACTIVE,
@@ -149,7 +163,8 @@ const removeProductFromUserCart = async ({ userId, productId, shopId }) => {
           order_products: { $exists: true, $eq: [] },
         },
       },
-    }
+    },
+    { new: true }
   );
 
   if (removeEmptyOrderProducts) {
@@ -174,8 +189,8 @@ module.exports = {
   getCartByUserIdAndShopId,
   getCartByUserId,
   addOrCreateCartWithOrder,
-  updateProductQuantity,
   updateProductQuantityByOne,
+  updateProductQuantity,
   addProductToOrderProducts,
   deleteUserCart,
   removeProductFromUserCart,

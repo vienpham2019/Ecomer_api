@@ -8,6 +8,7 @@ const {
   deleteUserCart,
   removeProductFromUserCart,
   getCartByUserId,
+  updateProductQuantity,
 } = require("../models/cart/cart.repo");
 const { findProduct } = require("../models/product/product.repo");
 
@@ -96,7 +97,7 @@ class CartService {
     return removeProduct;
   }
 
-  static async updateProductAmount({ userId, product }) {
+  static async updateProductQuantity({ userId, productId, quantity }) {
     const foundCart = await getCartByUserId({ userId });
     if (!foundCart) {
       throw new NotFoundError(`Cart not found`);
@@ -104,13 +105,54 @@ class CartService {
     if (foundCart?.cart_orders.length === 0) {
       throw new NotFoundError(`Cart empty!`);
     }
+
     const foundProduct = await findProduct({
-      productId: product._id,
+      productId: productId,
       unSelect: [],
     });
     if (!foundProduct) {
       throw new NotFoundError(`Product not found`);
     }
+
+    if (quantity <= 0) {
+      return await removeProductFromUserCart({
+        userId,
+        productId,
+        shopId: foundProduct.product_shopId,
+      });
+    }
+
+    const foundOrders = foundCart.cart_orders.find(
+      (order) =>
+        order.order_shopId.toString() === foundProduct.product_shopId.toString()
+    );
+    if (!foundOrders) {
+      throw new NotFoundError(`Product not found`);
+    }
+
+    const foundProductInCart = foundOrders.order_products.find(
+      (product) => product.product_id.toString() === productId.toString()
+    );
+    if (!foundProductInCart) {
+      throw new NotFoundError(`Product not found`);
+    }
+
+    if (quantity === foundProductInCart.product_quantity) {
+      return foundCart;
+    }
+
+    const updateProduct = await updateProductQuantity({
+      userId,
+      productId,
+      quantity,
+      shopId: foundProduct.product_shopId,
+      inc_quantity: quantity - foundProductInCart.product_quantity,
+    });
+
+    if (updateProduct.modifiedCount === 0) {
+      throw new NotFoundError(`Can't update product quantity`);
+    }
+    return updateProduct;
   }
 
   // Delete

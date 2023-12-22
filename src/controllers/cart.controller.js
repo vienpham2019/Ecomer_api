@@ -34,6 +34,17 @@ class CartController {
       }),
     }).send(res);
   };
+
+  updateProductQuantity = async (req, res, next) => {
+    new SuccessResponse({
+      message: "update product from cart Success!",
+      metadata: await CartService.updateProductQuantity({
+        productId: req.body._id,
+        quantity: req.body.quantity,
+        userId: req.user.userId,
+      }),
+    }).send(res);
+  };
   // Delete
   deleteUserCart = async (req, res, next) => {
     new SuccessResponse({
