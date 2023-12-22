@@ -96,7 +96,22 @@ class CartService {
     return removeProduct;
   }
 
-  static async updateProductAmount({ userId, product }) {}
+  static async updateProductAmount({ userId, product }) {
+    const foundCart = await getCartByUserId({ userId });
+    if (!foundCart) {
+      throw new NotFoundError(`Cart not found`);
+    }
+    if (foundCart?.cart_orders.length === 0) {
+      throw new NotFoundError(`Cart empty!`);
+    }
+    const foundProduct = await findProduct({
+      productId: product._id,
+      unSelect: [],
+    });
+    if (!foundProduct) {
+      throw new NotFoundError(`Product not found`);
+    }
+  }
 
   // Delete
   static async deleteUserCart({ userId }) {
