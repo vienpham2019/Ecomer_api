@@ -31,6 +31,7 @@ const {
   isInValidDate,
   removeDuplicatesInArray,
 } = require("../utils");
+const CartService = require("./cart.service");
 
 /*
     Discount Services 
@@ -241,7 +242,7 @@ class DiscountService {
     });
   }
 
-  static async getDiscountAmount({ code, userId, products }) {
+  static async getDiscountAmount({ code, userId }) {
     const foundDiscount = await findDiscount({
       discount_code: code,
     });
@@ -297,20 +298,30 @@ class DiscountService {
       throw new BadRequestError("Coupon code has expired!");
     }
 
+    // check you cart
+    const foundCart = await CartService.getUserCart({ userId });
+    const orderProducts = foundCart.cart_orders.find(
+      (order) => order.order_shopId.toString() === discount_shopId.toString()
+    )?.order_products;
+    if (!orderProducts) {
+      throw new NotFoundError(`Discount Code Inapplicable.`);
+    }
     let discountProductIds = [];
     // check for minimum order total for apply coupon
     let subTotal = 0;
-    for (let product of products) {
+    for (let product of orderProducts) {
       const foundProduct = await findProductByShopId({
         shopId: discount_shopId,
-        productId: product._id,
+        productId: product.product_id,
       });
       if (foundProduct) {
         if (discount_applies_to === DiscountAppliesToEnum.ALL) {
           discountProductIds.push(foundProduct._id);
           subTotal += product.product_quantity * foundProduct.product_price;
         } else {
-          if (discount_product_ids.includes(product._id)) {
+          if (
+            discount_product_ids.some((id) => id.equals(product.product_id))
+          ) {
             discountProductIds.push(foundProduct._id);
             subTotal += product.product_quantity * foundProduct.product_price;
           }
@@ -345,6 +356,7 @@ class DiscountService {
       subTotal,
       discountAmount,
       discountProductIds,
+      shopId: discount_shopId,
       grandTotal: subTotal - discountAmount,
     };
   }

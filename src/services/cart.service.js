@@ -134,7 +134,7 @@ class CartService {
 
   // Helper method
   // get
-  async _getCartByUserId({ userId }) {
+  static async _getCartByUserId({ userId }) {
     const foundCart = await getCartByUserId({ userId });
     if (!foundCart) {
       throw new NotFoundError(`Cart not found`);
@@ -142,7 +142,7 @@ class CartService {
     return foundCart;
   }
 
-  async _validateCartOrders({ userId }) {
+  static async _validateCartOrders({ userId }) {
     const foundCart = await this._getCartByUserId({ userId });
     if (foundCart?.cart_orders.length === 0) {
       throw new NotFoundError(`Cart empty!`);
@@ -150,7 +150,7 @@ class CartService {
     return foundCart;
   }
 
-  async _validateProduct({ productId }) {
+  static async _validateProduct({ productId }) {
     const foundProduct = await findProduct({
       productId,
       unSelect: [],
@@ -162,7 +162,7 @@ class CartService {
   }
 
   // delete
-  async _deleteUserCart({ userId }) {
+  static async _deleteUserCart({ userId }) {
     const deleteCart = await deleteUserCart({ userId });
     if (!deleteCart.deletedCount === 0) {
       throw new ForbiddenError(`Can't delete user cart`);
