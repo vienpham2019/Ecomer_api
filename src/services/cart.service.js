@@ -1,6 +1,10 @@
 "use strict";
 
-const { BadRequestError, NotFoundError } = require("../core/error.response");
+const {
+  BadRequestError,
+  NotFoundError,
+  ForbiddenError,
+} = require("../core/error.response");
 const {
   addOrCreateCartWithOrder,
   getCartByUserIdAndShopId,
@@ -24,22 +28,14 @@ const { findProduct } = require("../models/product/product.repo");
 class CartService {
   // Get
   static async getUserCart({ userId }) {
-    const foundCart = await getCartByUserId({ userId });
-    if (!foundCart) {
-      throw new NotFoundError(`Cart not found`);
-    }
-    return foundCart;
+    return await this._getCartByUserId({ userId });
   }
   // Create
   static async addToCart({ userId, product }) {
     // check for
-    const foundProduct = await findProduct({
+    const foundProduct = await this._validateProduct({
       productId: product._id,
-      unSelect: [],
     });
-    if (!foundProduct) {
-      throw new NotFoundError(`Product not found`);
-    }
 
     const { product_shopId, product_name, product_price, _id } = foundProduct;
 
@@ -70,20 +66,8 @@ class CartService {
   }
   // Update
   static async removeProductFromUserCart({ userId, productId }) {
-    const foundCart = await getCartByUserId({ userId });
-    if (!foundCart) {
-      throw new NotFoundError(`Cart not found`);
-    }
-    if (foundCart?.cart_orders.length === 0) {
-      throw new NotFoundError(`Cart empty!`);
-    }
-    const foundProduct = await findProduct({
-      productId,
-      unSelect: [],
-    });
-    if (!foundProduct) {
-      throw new NotFoundError(`Product not found`);
-    }
+    await this._validateCartOrders({ userId });
+    const foundProduct = await this._validateProduct({ productId });
 
     const removeProduct = await removeProductFromUserCart({
       userId,
@@ -98,21 +82,8 @@ class CartService {
   }
 
   static async updateProductQuantity({ userId, productId, quantity }) {
-    const foundCart = await getCartByUserId({ userId });
-    if (!foundCart) {
-      throw new NotFoundError(`Cart not found`);
-    }
-    if (foundCart?.cart_orders.length === 0) {
-      throw new NotFoundError(`Cart empty!`);
-    }
-
-    const foundProduct = await findProduct({
-      productId: productId,
-      unSelect: [],
-    });
-    if (!foundProduct) {
-      throw new NotFoundError(`Product not found`);
-    }
+    const foundCart = await this._validateCartOrders({ userId });
+    const foundProduct = await this._validateProduct({ productId });
 
     if (quantity <= 0) {
       return await removeProductFromUserCart({
@@ -157,11 +128,46 @@ class CartService {
 
   // Delete
   static async deleteUserCart({ userId }) {
+    await this._getCartByUserId({ userId });
+    return await this._deleteUserCart({ userId });
+  }
+
+  // Helper method
+  // get
+  async _getCartByUserId({ userId }) {
     const foundCart = await getCartByUserId({ userId });
     if (!foundCart) {
       throw new NotFoundError(`Cart not found`);
     }
-    return await deleteUserCart({ userId });
+    return foundCart;
+  }
+
+  async _validateCartOrders({ userId }) {
+    const foundCart = await this._getCartByUserId({ userId });
+    if (foundCart?.cart_orders.length === 0) {
+      throw new NotFoundError(`Cart empty!`);
+    }
+    return foundCart;
+  }
+
+  async _validateProduct({ productId }) {
+    const foundProduct = await findProduct({
+      productId,
+      unSelect: [],
+    });
+    if (!foundProduct) {
+      throw new NotFoundError(`Product not found`);
+    }
+    return foundProduct;
+  }
+
+  // delete
+  async _deleteUserCart({ userId }) {
+    const deleteCart = await deleteUserCart({ userId });
+    if (!deleteCart.deletedCount === 0) {
+      throw new ForbiddenError(`Can't delete user cart`);
+    }
+    return deleteCart;
   }
 }
 
