@@ -7,11 +7,29 @@ const {
   getUnSelectData,
   getSkip,
   getSortBy,
+  convertToObjectIdMongoDB,
 } = require("../../utils");
 const { BadRequestError } = require("../../core/error.response");
 const productModel = require("./product.model");
 
 // Get
+const checkValidProductList = async ({ productIds }) => {
+  return await Promise.all(
+    productIds.map(async (productId) => {
+      let foundProduct = await getProductById({ productId });
+      if (foundProduct) {
+        return foundProduct;
+      }
+    })
+  );
+};
+
+const getProductById = async ({ productId }) => {
+  return await productModel
+    .findOne({ _id: convertToObjectIdMongoDB(productId) })
+    .lean();
+};
+
 const checkForValidProductIds = async ({ payload, shopId }) => {
   return await productModel.find({
     _id: { $in: payload },
@@ -221,4 +239,5 @@ module.exports = {
   findProductByShopId,
   checkForValidProductIds,
   appyProductDiscount,
+  checkValidProductList,
 };

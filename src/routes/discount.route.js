@@ -7,10 +7,8 @@ const {
   getAllDiscountCodeByShop,
   getAllDiscountCodeByUser,
   getAllDiscountCodesWithProduct,
-  getDiscountAmount,
   createDiscountCode,
   updateDiscountCode,
-  cancleDiscountCode,
   deleteDiscountCode,
 } = require("../controllers/discount.controller");
 const { checkUserRole } = require("../auth/checkAuth");
@@ -22,8 +20,6 @@ router.get("/product", asyncHandler(getAllDiscountCodesWithProduct));
 
 // Authentication
 router.use(authentication);
-router.patch("/cancle", asyncHandler(cancleDiscountCode));
-router.patch("/amount", asyncHandler(getDiscountAmount));
 
 // Check for valid role
 router.use(checkUserRole(UserRoleEnum.SHOP));

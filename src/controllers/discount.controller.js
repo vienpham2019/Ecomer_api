@@ -67,28 +67,6 @@ class DiscountController {
       metadata: await DiscountService.getAllDiscountCodesWithProduct(req.query),
     }).send(res);
   };
-
-  // [User]
-  getDiscountAmount = async (req, res, next) => {
-    new SuccessResponse({
-      message: "Get discount amount Success!",
-      metadata: await DiscountService.getDiscountAmount({
-        ...req.body,
-        userId: req.user.userId,
-      }),
-    }).send(res);
-  };
-
-  // [User]
-  cancleDiscountCode = async (req, res, next) => {
-    new SuccessResponse({
-      message: "Cancle discount codes Success!",
-      metadata: await DiscountService.cancleDiscountCode({
-        ...req.body,
-        userId: req.user.userId,
-      }),
-    }).send(res);
-  };
 }
 
 module.exports = new DiscountController();

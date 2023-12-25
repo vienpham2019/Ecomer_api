@@ -35,6 +35,15 @@ const orderProductSchema = new Schema(
   { _id: false } // Specify _id: false to exclude _id field from embedded documents
 );
 
+const orderCouponSchema = new Schema(
+  {
+    coupon_type: String,
+    coupon_value: Number,
+    coupon_code: String,
+  },
+  { _id: false }
+);
+
 const cartOrdersSchema = new Schema(
   {
     order_shopId: {
@@ -47,9 +56,12 @@ const cartOrdersSchema = new Schema(
       required: true,
       default: [],
     },
-    order_couponCode: String,
-    order_subtotal: { type: Number, default: 0 },
+    order_coupon: {
+      type: orderCouponSchema,
+    },
     order_version: { type: Number, required: true, default: 2000 },
+    order_subtotal: { type: Number, default: 0 },
+    updatedAt: { type: Date, default: Date.now }, // Manually add updatedAt field
   },
   { _id: false } // Specify _id: false to exclude _id field from embedded documents
 );
@@ -80,6 +92,12 @@ const cartSchema = new Schema(
     timestamps: true,
   }
 );
+
+// Add pre-save hook to update updatedAt for cartOrdersSchema
+cartOrdersSchema.pre("save", function (next) {
+  this.updatedAt = new Date();
+  next();
+});
 
 //Export the model
 module.exports = model(DOCUMENT_NAME, cartSchema);

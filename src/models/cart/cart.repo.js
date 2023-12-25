@@ -37,40 +37,53 @@ const addOrCreateCartWithOrder = async ({ userId, shopId }) => {
 };
 
 // Update
-const updateProductQuantity = async ({
+const updateCartTotalByAmount = async ({
   userId,
-  productId,
-  shopId,
-  inc_quantity,
+  product,
+  quantityAmount = 1,
+  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
 }) => {
+  const order_subtotal_inc =
+    product.product_discountPrice === 0
+      ? product.product_price
+      : product.product_discountPrice;
+  const cart_orderSubtotal_inc = product.product_price * quantityAmount;
+  const cart_saleDiscount_inc =
+    (product.product_price - order_subtotal_inc) * quantityAmount;
+  console.log(
+    order_subtotal_inc,
+    cart_orderSubtotal_inc,
+    cart_saleDiscount_inc
+  );
   const query = {
     cart_userId: userId,
-    "cart_orders.order_shopId": shopId,
-    "cart_orders.order_products.product_id": productId,
+    "cart_orders.order_shopId": product.product_shopId,
     cart_state: CartStateEnum.ACTIVE,
   };
-  const updateSet = {
+  const update = {
     $inc: {
-      "cart_orders.$[orderElem].order_products.$[productElem].product_quantity":
-        inc_quantity,
-      "cart_orders.$[orderElem].order_products.$[productElem].product_oldQuantity":
-        inc_quantity,
+      "cart_orders.$[orderElem].order_subtotal":
+        order_subtotal_inc * quantityAmount,
+      cart_orderSubtotal: cart_orderSubtotal_inc,
+      cart_saleDiscount: cart_saleDiscount_inc,
+      cart_grandTotal: cart_orderSubtotal_inc - cart_saleDiscount_inc,
     },
   };
   const options = {
-    arrayFilters: [
-      { "orderElem.order_shopId": shopId },
-      { "productElem.product_id": productId },
-    ],
+    arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
     new: true,
   };
-  return await cartModel.findOneAndUpdate(query, updateSet, options);
+
+  return await cartModel
+    .findOneAndUpdate(query, update, options)
+    .select(getUnSelectData(unSelect));
 };
 
 const updateProductQuantityByAmount = async ({
   userId,
   product,
   quantityAmount,
+  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
 }) => {
   const query = {
     cart_userId: userId,
@@ -94,7 +107,9 @@ const updateProductQuantityByAmount = async ({
     new: true,
   };
   await updateCartTotalByAmount({ userId, product, quantityAmount });
-  return await cartModel.findOneAndUpdate(query, update, options);
+  return await cartModel
+    .findOneAndUpdate(query, update, options)
+    .select(getUnSelectData(unSelect));
 };
 
 const addProductToOrderProducts = async ({
@@ -136,48 +151,6 @@ const addProductToOrderProducts = async ({
     new: true,
   };
   await updateCartTotalByAmount({ userId, product });
-  return await cartModel
-    .findOneAndUpdate(query, update, options)
-    .select(getUnSelectData(unSelect));
-};
-
-const updateCartTotalByAmount = async ({
-  userId,
-  product,
-  quantityAmount = 1,
-  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
-}) => {
-  const order_subtotal_inc =
-    product.product_discountPrice === 0
-      ? product.product_price
-      : product.product_discountPrice;
-  const cart_orderSubtotal_inc = product.product_price * quantityAmount;
-  const cart_saleDiscount_inc =
-    (product.product_price - order_subtotal_inc) * quantityAmount;
-  console.log(
-    order_subtotal_inc,
-    cart_orderSubtotal_inc,
-    cart_saleDiscount_inc
-  );
-  const query = {
-    cart_userId: userId,
-    "cart_orders.order_shopId": product.product_shopId,
-    cart_state: CartStateEnum.ACTIVE,
-  };
-  const update = {
-    $inc: {
-      "cart_orders.$[orderElem].order_subtotal":
-        order_subtotal_inc * quantityAmount,
-      cart_orderSubtotal: cart_orderSubtotal_inc,
-      cart_saleDiscount: cart_saleDiscount_inc,
-      cart_grandTotal: cart_orderSubtotal_inc - cart_saleDiscount_inc,
-    },
-  };
-  const options = {
-    arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
-    new: true,
-  };
-
   return await cartModel
     .findOneAndUpdate(query, update, options)
     .select(getUnSelectData(unSelect));
@@ -246,6 +219,42 @@ const removeProductFromUserCart = async ({
   return removeProductFromCart;
 };
 
+const applyOrderCoupon = async ({ userId, shopId, payload }) => {
+  const query = {
+    cart_userId: userId,
+    "cart_orders.order_shopId": shopId,
+    cart_state: CartStateEnum.ACTIVE,
+  };
+  const update = {
+    $set: {
+      "cart_orders.$[orderElem].order_coupon": payload,
+    },
+  };
+  const options = {
+    arrayFilters: [{ "orderElem.order_shopId": shopId }],
+    new: true,
+  };
+  return await cartModel.updateOne(query, update, options).lean();
+};
+
+const cancelCouponCode = async ({ userId, shopId }) => {
+  const query = {
+    cart_userId: userId,
+    cart_state: CartStateEnum.ACTIVE,
+    "cart_orders.order_shopId": shopId,
+  };
+  const update = {
+    $unset: {
+      "cart_orders.$[orderElem].order_coupon": 1,
+    },
+  };
+  const options = {
+    arrayFilters: [{ "orderElem.order_shopId": shopId }],
+    new: true,
+  };
+  return await cartModel.updateOne(query, update, options).lean();
+};
+
 // Delete
 const deleteUserCart = async ({ userId }) => {
   try {
@@ -262,8 +271,9 @@ module.exports = {
   getCartByUserId,
   addOrCreateCartWithOrder,
   updateProductQuantityByAmount,
-  updateProductQuantity,
   addProductToOrderProducts,
   deleteUserCart,
   removeProductFromUserCart,
+  applyOrderCoupon,
+  cancelCouponCode,
 };

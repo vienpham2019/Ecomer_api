@@ -1,6 +1,6 @@
 const DiscountTypeEnum = Object.freeze({
-  FIXED: "fixed_amount",
-  PERCENTAGE: "percentage_amount",
+  FIXED: "fixed",
+  PERCENTAGE: "percentage",
   // Add more roles as needed
 });
 

@@ -137,6 +137,101 @@ class DiscountService {
     });
   }
 
+  static async canApplyCouponCode({ code, products, userId }) {
+    const foundDiscount = await findDiscount({
+      discount_code: code,
+    });
+    if (!foundDiscount) throw new NotFoundError("Coupon code not exists!");
+    const {
+      discount_is_active,
+      discount_max_uses,
+      discount_used_count,
+      discount_start_date,
+      discount_end_date,
+      discount_max_uses_per_user,
+      discount_users_used,
+      discount_min_order_value,
+      discount_product_ids,
+      discount_applies_to,
+      discount_shopId,
+    } = foundDiscount;
+
+    // Check for avaliable coupon code
+    if (discount_used_count >= discount_max_uses) {
+      throw new BadRequestError(
+        `Discount code has exceeded the max number of times can use`
+      );
+    }
+    // check for user already use discount and base on discount_max_per_user
+    const numUserUseDiscount = discount_users_used.filter(
+      (userUsedId) => userUsedId === userId
+    ).length;
+    if (numUserUseDiscount >= discount_max_uses_per_user) {
+      throw new BadRequestError(
+        `You has exceeded the max number of times can use this coupon code`
+      );
+    }
+
+    // check for date
+    if (new Date() < new Date(discount_start_date)) {
+      throw new BadRequestError(
+        `Coupon code start from ${discount_start_date} and end at ${discount_end_date}`
+      );
+    }
+    if (!discount_is_active)
+      throw new BadRequestError("Coupon code has expired!");
+    if (discount_max_uses < 1)
+      throw new BadRequestError("Coupon code are out!");
+    if (
+      new Date() < new Date(discount_start_date) ||
+      new Date() > new Date(discount_end_date)
+    ) {
+      throw new BadRequestError("Coupon code has expired!");
+    }
+
+    let discountProductIds = [];
+    // check for minimum order total for apply coupon
+    let subTotal = 0;
+    for (let product of products) {
+      const foundProduct = await findProductByShopId({
+        shopId: discount_shopId,
+        productId: product.product_id,
+      });
+      if (foundProduct) {
+        if (discount_applies_to === DiscountAppliesToEnum.ALL) {
+          discountProductIds.push(foundProduct._id);
+          subTotal += product.product_quantity * foundProduct.product_price;
+        } else {
+          if (
+            discount_product_ids.some((id) => id.equals(product.product_id))
+          ) {
+            discountProductIds.push(foundProduct._id);
+            subTotal += product.product_quantity * foundProduct.product_price;
+          }
+        }
+      }
+    }
+
+    if (subTotal < discount_min_order_value) {
+      throw new BadRequestError(
+        `The minimum spend for this coupon is ${discount_min_order_value}`
+      );
+    }
+
+    const addUserUsed = await addDiscountUsersUsed({
+      discountId: foundDiscount._id,
+      userId,
+    });
+
+    if (!addUserUsed) {
+      throw new ForbiddenError(
+        `Can't get amout by discount code. Please try again!`
+      );
+    }
+
+    return foundDiscount;
+  }
+
   // Create
   static async createDiscountCode(payload) {
     const { discount_start_date, discount_end_date, discount_code } = payload;
@@ -242,111 +337,9 @@ class DiscountService {
     });
   }
 
-  static async getDiscountAmount({ code, userId }) {
-    const foundDiscount = await findDiscount({
-      discount_code: code,
-    });
-    if (!foundDiscount) throw new NotFoundError("Coupon code not exists!");
-
-    const {
-      discount_is_active,
-      discount_max_uses,
-      discount_used_count,
-      discount_start_date,
-      discount_end_date,
-      discount_max_uses_per_user,
-      discount_users_used,
-      discount_min_order_value,
-      discount_product_ids,
-      discount_applies_to,
-      discount_type,
-      discount_value,
-      discount_shopId,
-    } = foundDiscount;
-
-    // check you cart
-    const foundCart = await getCartByUserId({ userId });
-    if (!foundCart) {
-      throw new NotFoundError(`Cart not found`);
-    }
-
-    const orderProducts = foundCart.cart_orders.find(
-      (order) => order.order_shopId.toString() === discount_shopId.toString()
-    )?.order_products;
-    if (!orderProducts) {
-      throw new NotFoundError(`Discount Code Inapplicable.`);
-    }
-
-    // Check for avaliable coupon code
-    if (discount_used_count >= discount_max_uses) {
-      throw new BadRequestError(
-        `Discount code has exceeded the max number of times can use`
-      );
-    }
-    // check for user already use discount and base on discount_max_per_user
-    const numUserUseDiscount = discount_users_used.filter(
-      (userUsedId) => userUsedId === userId
-    ).length;
-    if (numUserUseDiscount >= discount_max_uses_per_user) {
-      throw new BadRequestError(
-        `You has exceeded the max number of times can use this coupon code`
-      );
-    }
-
-    // check for date
-    if (new Date() < new Date(discount_start_date)) {
-      throw new BadRequestError(
-        `Coupon code start from ${discount_start_date} and end at ${discount_end_date}`
-      );
-    }
-    if (!discount_is_active)
-      throw new BadRequestError("Coupon code has expired!");
-    if (discount_max_uses < 1)
-      throw new BadRequestError("Coupon code are out!");
-    if (
-      new Date() < new Date(discount_start_date) ||
-      new Date() > new Date(discount_end_date)
-    ) {
-      throw new BadRequestError("Coupon code has expired!");
-    }
-
-    let discountProductIds = [];
-    // check for minimum order total for apply coupon
-    let subTotal = 0;
-    for (let product of orderProducts) {
-      const foundProduct = await findProductByShopId({
-        shopId: discount_shopId,
-        productId: product.product_id,
-      });
-      if (foundProduct) {
-        if (discount_applies_to === DiscountAppliesToEnum.ALL) {
-          discountProductIds.push(foundProduct._id);
-          subTotal += product.product_quantity * foundProduct.product_price;
-        } else {
-          if (
-            discount_product_ids.some((id) => id.equals(product.product_id))
-          ) {
-            discountProductIds.push(foundProduct._id);
-            subTotal += product.product_quantity * foundProduct.product_price;
-          }
-        }
-      }
-    }
-
-    if (subTotal < discount_min_order_value) {
-      throw new BadRequestError(
-        `The minimum spend for this coupon is ${discount_min_order_value}`
-      );
-    }
-
-    // check discount fixed amount
-    const discountAmount =
-      discount_type === DiscountTypeEnum.FIXED
-        ? discount_value
-        : subTotal * (discount_value / 100);
-
+  static async applyDiscountCode({ discount, userId }) {
     const addUserUsed = await addDiscountUsersUsed({
-      discountId: foundDiscount._id,
+      discountId: discount._id,
       userId,
     });
 
@@ -355,17 +348,10 @@ class DiscountService {
         `Can't get amout by discount code. Please try again!`
       );
     }
-
-    return {
-      subTotal,
-      discountAmount,
-      discountProductIds,
-      shopId: discount_shopId,
-      grandTotal: subTotal - discountAmount,
-    };
+    return addUserUsed;
   }
 
-  static async cancleDiscountCode({ code, userId }) {
+  static async cancelCouponCode({ code, userId }) {
     const foundDiscount = await findDiscount({
       discount_code: code,
     });
