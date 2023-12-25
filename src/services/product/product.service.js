@@ -1,7 +1,7 @@
 "use strict";
 
 const { mongoose } = require("mongoose");
-const { BadRequestError } = require("../../core/error.response");
+const { BadRequestError, NotFoundError } = require("../../core/error.response");
 const {
   findAllDraftsForShop,
   findAllPublishsForShop,
@@ -11,8 +11,13 @@ const {
   findAllProducts,
   findProduct,
   getProductType,
+  findProductByShopId,
+  appyProductDiscount,
 } = require("../../models/product/product.repo");
-const { ProductTypeEnum } = require("../../models/product/product.enum");
+const {
+  ProductTypeEnum,
+  ProductDiscountTypeEnum,
+} = require("../../models/product/product.enum");
 
 // define Factory class to create product
 class ProductFactory {
@@ -47,6 +52,42 @@ class ProductFactory {
       shopId,
       unSelect,
       payload,
+    });
+  }
+
+  static async applyProductDiscount({ productId, shopId, payload }) {
+    payload.product_discountValue = Math.abs(payload.product_discountValue);
+    const { product_discountType, product_discountValue } = payload;
+    const foundProduct = await this._foundProduct({ productId, shopId });
+    payload.product_discountPrice = foundProduct.product_price;
+    if (
+      !Object.values(ProductDiscountTypeEnum).includes(product_discountType)
+    ) {
+      throw new BadRequestError(`Invalid product discount type`);
+    }
+    if (product_discountType === ProductDiscountTypeEnum.PERCENTAGE) {
+      if (product_discountValue > 100) {
+        throw new BadRequestError(
+          `Can't apply ${product_discountValue}% discount`
+        );
+      }
+      payload.product_discountPrice *= (100 - product_discountValue) / 100;
+    } else {
+      if (product_discountValue > foundProduct.product_price) {
+        throw new BadRequestError(
+          `Can't apply discount price larger than current product price`
+        );
+      }
+      payload.product_discountPrice -= product_discountValue;
+    }
+
+    const unSelect = ["createdAt", "updatedAt", "__v", "_id"];
+    return await appyProductDiscount({
+      productId,
+      shopId,
+      unSelect,
+      payload,
+      isNew: true,
     });
   }
 
@@ -107,6 +148,15 @@ class ProductFactory {
     const type = await getProductType({ productId });
     const productClass = ProductFactory.productRegistry[type];
     return await productClass.deleteDraftProduct({ productId, shopId });
+  }
+
+  // Helper
+  static async _foundProduct({ productId, shopId }) {
+    const foundProduct = await findProductByShopId({ shopId, productId });
+    if (!foundProduct) {
+      throw new NotFoundError(`Product not found`);
+    }
+    return foundProduct;
   }
 }
 

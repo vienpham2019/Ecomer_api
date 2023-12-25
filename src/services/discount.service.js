@@ -5,6 +5,7 @@ const {
   NotFoundError,
   ForbiddenError,
 } = require("../core/error.response");
+const { getCartByUserId } = require("../models/cart/cart.repo");
 const {
   DiscountAppliesToEnum,
   DiscountTypeEnum,
@@ -31,7 +32,6 @@ const {
   isInValidDate,
   removeDuplicatesInArray,
 } = require("../utils");
-const CartService = require("./cart.service");
 
 /*
     Discount Services 
@@ -246,7 +246,6 @@ class DiscountService {
     const foundDiscount = await findDiscount({
       discount_code: code,
     });
-
     if (!foundDiscount) throw new NotFoundError("Coupon code not exists!");
 
     const {
@@ -264,6 +263,19 @@ class DiscountService {
       discount_value,
       discount_shopId,
     } = foundDiscount;
+
+    // check you cart
+    const foundCart = await getCartByUserId({ userId });
+    if (!foundCart) {
+      throw new NotFoundError(`Cart not found`);
+    }
+
+    const orderProducts = foundCart.cart_orders.find(
+      (order) => order.order_shopId.toString() === discount_shopId.toString()
+    )?.order_products;
+    if (!orderProducts) {
+      throw new NotFoundError(`Discount Code Inapplicable.`);
+    }
 
     // Check for avaliable coupon code
     if (discount_used_count >= discount_max_uses) {
@@ -298,14 +310,6 @@ class DiscountService {
       throw new BadRequestError("Coupon code has expired!");
     }
 
-    // check you cart
-    const foundCart = await CartService.getUserCart({ userId });
-    const orderProducts = foundCart.cart_orders.find(
-      (order) => order.order_shopId.toString() === discount_shopId.toString()
-    )?.order_products;
-    if (!orderProducts) {
-      throw new NotFoundError(`Discount Code Inapplicable.`);
-    }
     let discountProductIds = [];
     // check for minimum order total for apply coupon
     let subTotal = 0;

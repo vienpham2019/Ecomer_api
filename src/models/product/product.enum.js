@@ -5,4 +5,10 @@ const ProductTypeEnum = Object.freeze({
   // Add more roles as needed
 });
 
-module.exports = { ProductTypeEnum };
+const ProductDiscountTypeEnum = Object.freeze({
+  FIXED: "fixed",
+  PERCENTAGE: "percentage",
+  // Add more roles as needed
+});
+
+module.exports = { ProductTypeEnum, ProductDiscountTypeEnum };

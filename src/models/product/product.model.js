@@ -2,7 +2,7 @@
 
 const { Schema, model } = require("mongoose"); // Erase if already required
 const slugify = require("slugify");
-const { ProductTypeEnum } = require("./product.enum");
+const { ProductTypeEnum, ProductDiscountTypeEnum } = require("./product.enum");
 const DOCUMENT_NAME = "Product";
 const COLLECTION_NAME = "Products";
 
@@ -23,6 +23,12 @@ const productSchema = new Schema(
       type: Number,
       required: true,
     },
+    product_discountType: {
+      type: String,
+      enum: Object.values(ProductDiscountTypeEnum),
+    },
+    product_discountValue: Number,
+    product_discountPrice: Number,
     product_quantity: {
       type: Number,
       required: true,

@@ -16,6 +16,7 @@ const {
   getAllDraftsForShop,
   getAllPublishsForShop,
   deleteDraftProduct,
+  applyProductDiscount,
 } = require("../controllers/product.controller");
 const { checkUserRole } = require("../auth/checkAuth");
 const { UserRoleEnum } = require("../models/user/user.enum");
@@ -38,6 +39,7 @@ router.post("/unpublish/:productId", asyncHandler(unPublishProductByShop));
 
 // update
 router.patch("/:productId", asyncHandler(updateProduct));
+router.patch("/applyDiscount/:productId", asyncHandler(applyProductDiscount));
 
 // delete
 router.delete("/drafts/:productId", asyncHandler(deleteDraftProduct));

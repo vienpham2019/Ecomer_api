@@ -28,6 +28,17 @@ class ProductController {
     }).send(res);
   };
 
+  applyProductDiscount = async (req, res, next) => {
+    new SuccessResponse({
+      message: "Apply Product discount success!",
+      metadata: await ProductService.applyProductDiscount({
+        productId: req.params.productId,
+        shopId: req.user.userId,
+        payload: req.body,
+      }),
+    }).send(res);
+  };
+
   publishProductByShop = async (req, res, next) => {
     new SuccessResponse({
       message: "Publish Product success!",

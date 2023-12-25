@@ -13,6 +13,7 @@ const {
   removeProductFromUserCart,
   getCartByUserId,
   updateProductQuantity,
+  updateProductQuantityByAmount,
 } = require("../models/cart/cart.repo");
 const { findProduct } = require("../models/product/product.repo");
 
@@ -37,13 +38,20 @@ class CartService {
       productId: product._id,
     });
 
-    const { product_shopId, product_name, product_price, _id } = foundProduct;
+    const {
+      product_shopId,
+      product_name,
+      product_price,
+      _id,
+      product_discountPrice = 0,
+    } = foundProduct;
 
-    const addToCartProduct = {
+    let addToCartProduct = {
       product_id: _id,
       product_shopId,
       product_price,
       product_name,
+      product_discountPrice,
     };
 
     // Check if the user has a cart with matching product_shopId
@@ -66,13 +74,16 @@ class CartService {
   }
   // Update
   static async removeProductFromUserCart({ userId, productId }) {
-    await this._validateCartOrders({ userId });
-    const foundProduct = await this._validateProduct({ productId });
-
-    const removeProduct = await removeProductFromUserCart({
+    const { foundProduct, foundProductInCart } = await this._getProductInCart({
       userId,
       productId,
-      shopId: foundProduct.product_shopId,
+    });
+    const removeProduct = await removeProductFromUserCart({
+      userId,
+      product: {
+        ...foundProductInCart._doc,
+        product_shopId: foundProduct.product_shopId,
+      },
     });
 
     if (removeProduct.modifiedCount === 0) {
@@ -82,42 +93,24 @@ class CartService {
   }
 
   static async updateProductQuantity({ userId, productId, quantity }) {
-    const foundCart = await this._validateCartOrders({ userId });
-    const foundProduct = await this._validateProduct({ productId });
-
     if (quantity <= 0) {
-      return await removeProductFromUserCart({
-        userId,
-        productId,
-        shopId: foundProduct.product_shopId,
-      });
+      return await this.removeProductFromUserCart({ userId, productId });
     }
 
-    const foundOrders = foundCart.cart_orders.find(
-      (order) =>
-        order.order_shopId.toString() === foundProduct.product_shopId.toString()
-    );
-    if (!foundOrders) {
-      throw new NotFoundError(`Product not found`);
-    }
-
-    const foundProductInCart = foundOrders.order_products.find(
-      (product) => product.product_id.toString() === productId.toString()
-    );
-    if (!foundProductInCart) {
-      throw new NotFoundError(`Product not found`);
-    }
+    const { foundCart, foundProduct, foundProductInCart } =
+      await this._getProductInCart({ userId, productId });
 
     if (quantity === foundProductInCart.product_quantity) {
       return foundCart;
     }
 
-    const updateProduct = await updateProductQuantity({
+    const updateProduct = await updateProductQuantityByAmount({
       userId,
-      productId,
-      quantity,
-      shopId: foundProduct.product_shopId,
-      inc_quantity: quantity - foundProductInCart.product_quantity,
+      product: {
+        ...foundProductInCart._doc,
+        product_shopId: foundProduct.product_shopId,
+      },
+      quantityAmount: quantity - foundProductInCart.product_quantity,
     });
 
     if (updateProduct.modifiedCount === 0) {
@@ -140,6 +133,26 @@ class CartService {
       throw new NotFoundError(`Cart not found`);
     }
     return foundCart;
+  }
+
+  static async _getProductInCart({ userId, productId }) {
+    const foundCart = await this._validateCartOrders({ userId });
+    const foundProduct = await this._validateProduct({ productId });
+    const foundOrders = foundCart.cart_orders.find(
+      (order) =>
+        order.order_shopId.toString() === foundProduct.product_shopId.toString()
+    );
+    if (!foundOrders) {
+      throw new NotFoundError(`Product not found`);
+    }
+
+    const foundProductInCart = foundOrders.order_products.find(
+      (product) => product.product_id.toString() === productId.toString()
+    );
+    if (!foundProductInCart) {
+      throw new NotFoundError(`Product not found`);
+    }
+    return { foundProductInCart, foundCart, foundProduct };
   }
 
   static async _validateCartOrders({ userId }) {

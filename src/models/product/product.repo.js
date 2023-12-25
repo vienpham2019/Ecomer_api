@@ -143,6 +143,23 @@ const unPublishProductByShop = async ({
   });
 };
 
+const appyProductDiscount = async ({
+  shopId,
+  productId,
+  payload,
+  unSelect,
+  isNew = false,
+}) => {
+  return await updateProductById({
+    shopId,
+    productId,
+    payload,
+    model: productModel,
+    unSelect,
+    isNew,
+  });
+};
+
 const updateProductById = async ({
   productId,
   shopId,
@@ -203,4 +220,5 @@ module.exports = {
   getProductType,
   findProductByShopId,
   checkForValidProductIds,
+  appyProductDiscount,
 };

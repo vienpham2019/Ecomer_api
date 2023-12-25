@@ -1,10 +1,8 @@
 "use strict";
 
-const { Types } = require("mongoose");
 const cartModel = require("./cart.model");
 const { CartStateEnum } = require("./cart.enum");
-const { BadRequestError } = require("../../core/error.response");
-const { convertToObjectIdMongoDB } = require("../../utils");
+const { convertToObjectIdMongoDB, getUnSelectData } = require("../../utils");
 
 // Get
 const getCartByUserId = async ({ userId }) => {
@@ -55,7 +53,7 @@ const updateProductQuantity = async ({
     $inc: {
       "cart_orders.$[orderElem].order_products.$[productElem].product_quantity":
         inc_quantity,
-      "cart_orders.$[orderElem].order_products.$[productElem].product_old_quantity":
+      "cart_orders.$[orderElem].order_products.$[productElem].product_oldQuantity":
         inc_quantity,
     },
   };
@@ -69,7 +67,11 @@ const updateProductQuantity = async ({
   return await cartModel.findOneAndUpdate(query, updateSet, options);
 };
 
-const updateProductQuantityByOne = async ({ userId, product }) => {
+const updateProductQuantityByAmount = async ({
+  userId,
+  product,
+  quantityAmount,
+}) => {
   const query = {
     cart_userId: userId,
     "cart_orders.order_shopId": product.product_shopId,
@@ -78,8 +80,10 @@ const updateProductQuantityByOne = async ({ userId, product }) => {
   };
   const update = {
     $inc: {
-      "cart_orders.$[orderElem].order_products.$[productElem].product_quantity": 1,
-      "cart_orders.$[orderElem].order_products.$[productElem].product_old_quantity": 1,
+      "cart_orders.$[orderElem].order_products.$[productElem].product_quantity":
+        quantityAmount,
+      "cart_orders.$[orderElem].order_products.$[productElem].product_oldQuantity":
+        quantityAmount,
     },
   };
   const options = {
@@ -89,10 +93,15 @@ const updateProductQuantityByOne = async ({ userId, product }) => {
     ],
     new: true,
   };
+  await updateCartTotalByAmount({ userId, product, quantityAmount });
   return await cartModel.findOneAndUpdate(query, update, options);
 };
 
-const addProductToOrderProducts = async ({ userId, product }) => {
+const addProductToOrderProducts = async ({
+  userId,
+  product,
+  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
+}) => {
   const existingProduct = await cartModel.findOne({
     cart_userId: userId,
     "cart_orders.order_shopId": product.product_shopId,
@@ -102,7 +111,11 @@ const addProductToOrderProducts = async ({ userId, product }) => {
 
   if (existingProduct) {
     // If the product already exists in order_products, return the cart
-    return await updateProductQuantityByOne({ userId, product });
+    return await updateProductQuantityByAmount({
+      userId,
+      product,
+      quantityAmount: 1,
+    });
   }
 
   const query = {
@@ -114,58 +127,117 @@ const addProductToOrderProducts = async ({ userId, product }) => {
     $addToSet: {
       "cart_orders.$[orderElem].order_products": product,
     },
-    $inc: { cart_count_product: 1 },
+    $inc: {
+      cart_count_product: 1,
+    },
+  };
+  const options = {
+    arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
+    new: true,
+  };
+  await updateCartTotalByAmount({ userId, product });
+  return await cartModel
+    .findOneAndUpdate(query, update, options)
+    .select(getUnSelectData(unSelect));
+};
+
+const updateCartTotalByAmount = async ({
+  userId,
+  product,
+  quantityAmount = 1,
+  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
+}) => {
+  const order_subtotal_inc =
+    product.product_discountPrice === 0
+      ? product.product_price
+      : product.product_discountPrice;
+  const cart_orderSubtotal_inc = product.product_price * quantityAmount;
+  const cart_saleDiscount_inc =
+    (product.product_price - order_subtotal_inc) * quantityAmount;
+  console.log(
+    order_subtotal_inc,
+    cart_orderSubtotal_inc,
+    cart_saleDiscount_inc
+  );
+  const query = {
+    cart_userId: userId,
+    "cart_orders.order_shopId": product.product_shopId,
+    cart_state: CartStateEnum.ACTIVE,
+  };
+  const update = {
+    $inc: {
+      "cart_orders.$[orderElem].order_subtotal":
+        order_subtotal_inc * quantityAmount,
+      cart_orderSubtotal: cart_orderSubtotal_inc,
+      cart_saleDiscount: cart_saleDiscount_inc,
+      cart_grandTotal: cart_orderSubtotal_inc - cart_saleDiscount_inc,
+    },
   };
   const options = {
     arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
     new: true,
   };
 
-  return await cartModel.findOneAndUpdate(query, update, options);
+  return await cartModel
+    .findOneAndUpdate(query, update, options)
+    .select(getUnSelectData(unSelect));
 };
 
-const removeProductFromUserCart = async ({ userId, productId, shopId }) => {
-  const removeProductFromCart = await cartModel.findOneAndUpdate(
-    {
-      cart_userId: userId,
-      "cart_orders.order_shopId": shopId,
-      cart_state: CartStateEnum.ACTIVE,
-      "cart_orders.order_products.product_id": productId,
-    },
-    {
-      $pull: {
-        "cart_orders.$[orderElem].order_products": { product_id: productId },
+const removeProductFromUserCart = async ({
+  userId,
+  product,
+  unSelect = ["__v", "updatedAt", "createdAt", "_id"],
+}) => {
+  await updateCartTotalByAmount({
+    userId,
+    product,
+    quantityAmount: product.product_quantity * -1,
+  });
+  const rp_query = {
+    cart_userId: userId,
+    "cart_orders.order_shopId": product.product_shopId,
+    cart_state: CartStateEnum.ACTIVE,
+    "cart_orders.order_products.product_id": product.product_id,
+  };
+  const rp_update = {
+    $pull: {
+      "cart_orders.$[orderElem].order_products": {
+        product_id: product.product_id,
       },
-      $inc: { cart_count_product: -1 },
     },
-    {
-      arrayFilters: [{ "orderElem.order_shopId": shopId }],
-      new: true,
-    }
-  );
-
-  if (!removeProductFromCart) {
-    throw new BadRequestError(`Product not found in cart`);
-  }
+    $inc: { cart_count_product: -1 },
+  };
+  const rp_options = {
+    arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
+    new: true,
+  };
+  const removeProductFromCart = await cartModel
+    .findOneAndUpdate(rp_query, rp_update, rp_options)
+    .select(getUnSelectData(unSelect));
 
   // Remove the entire order_products array if it's empty
-  const removeEmptyOrderProducts = await cartModel.findOneAndUpdate(
-    {
-      cart_userId: convertToObjectIdMongoDB(userId),
-      cart_state: CartStateEnum.ACTIVE,
-      "cart_orders.order_shopId": convertToObjectIdMongoDB(shopId),
-      "cart_orders.order_products": { $exists: true, $eq: [] },
-    },
-    {
-      $pull: {
-        cart_orders: {
-          order_shopId: convertToObjectIdMongoDB(shopId),
-          order_products: { $exists: true, $eq: [] },
-        },
+  const ro_query = {
+    cart_userId: convertToObjectIdMongoDB(userId),
+    cart_state: CartStateEnum.ACTIVE,
+    "cart_orders.order_shopId": convertToObjectIdMongoDB(
+      product.product_shopId
+    ),
+    "cart_orders.order_products": { $exists: true, $eq: [] },
+  };
+  const ro_update = {
+    $pull: {
+      cart_orders: {
+        order_shopId: convertToObjectIdMongoDB(product.product_shopId),
+        order_products: { $exists: true, $eq: [] },
       },
     },
-    { new: true }
-  );
+  };
+  const ro_options = {
+    new: true,
+  };
+  const removeEmptyOrderProducts = await cartModel
+    .findOneAndUpdate(ro_query, ro_update, ro_options)
+    .select(getUnSelectData(unSelect));
 
   if (removeEmptyOrderProducts) {
     return removeEmptyOrderProducts;
@@ -189,7 +261,7 @@ module.exports = {
   getCartByUserIdAndShopId,
   getCartByUserId,
   addOrCreateCartWithOrder,
-  updateProductQuantityByOne,
+  updateProductQuantityByAmount,
   updateProductQuantity,
   addProductToOrderProducts,
   deleteUserCart,

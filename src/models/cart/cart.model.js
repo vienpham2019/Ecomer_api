@@ -21,7 +21,7 @@ const orderProductSchema = new Schema(
       required: true,
       default: 1, // You can set a default quantity if needed
     },
-    product_old_quantity: {
+    product_oldQuantity: {
       type: Number,
       required: true,
       default: 0,
@@ -30,6 +30,7 @@ const orderProductSchema = new Schema(
       type: Number,
       required: true,
     },
+    product_discountPrice: Number,
   },
   { _id: false } // Specify _id: false to exclude _id field from embedded documents
 );
@@ -46,6 +47,8 @@ const cartOrdersSchema = new Schema(
       required: true,
       default: [],
     },
+    order_couponCode: String,
+    order_subtotal: { type: Number, default: 0 },
     order_version: { type: Number, required: true, default: 2000 },
   },
   { _id: false } // Specify _id: false to exclude _id field from embedded documents
@@ -67,6 +70,10 @@ const cartSchema = new Schema(
       ref: "User",
       required: true,
     },
+    cart_orderSubtotal: { type: Number, default: 0 },
+    cart_saleDiscount: { type: Number, default: 0 },
+    cart_voucherTotal: { type: Number, default: 0 },
+    cart_grandTotal: { type: Number, default: 0 },
   },
   {
     collection: COLLECTION_NAME,
