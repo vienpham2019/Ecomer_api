@@ -40,6 +40,7 @@ const orderCouponSchema = new Schema(
     coupon_type: String,
     coupon_value: Number,
     coupon_code: String,
+    coupon_applyAmount: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -76,7 +77,7 @@ const cartSchema = new Schema(
       default: CartStateEnum.ACTIVE,
     },
     cart_orders: { type: [cartOrdersSchema], required: true, default: [] },
-    cart_count_product: { type: Number, default: 0 },
+    cart_countProduct: { type: Number, default: 0 },
     cart_userId: {
       type: Types.ObjectId,
       ref: "User",

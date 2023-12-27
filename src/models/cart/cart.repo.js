@@ -143,7 +143,7 @@ const addProductToOrderProducts = async ({
       "cart_orders.$[orderElem].order_products": product,
     },
     $inc: {
-      cart_count_product: 1,
+      cart_countProduct: 1,
     },
   };
   const options = {
@@ -178,7 +178,7 @@ const removeProductFromUserCart = async ({
         product_id: product.product_id,
       },
     },
-    $inc: { cart_count_product: -1 },
+    $inc: { cart_countProduct: -1 },
   };
   const rp_options = {
     arrayFilters: [{ "orderElem.order_shopId": product.product_shopId }],
@@ -219,7 +219,12 @@ const removeProductFromUserCart = async ({
   return removeProductFromCart;
 };
 
-const applyOrderCoupon = async ({ userId, shopId, payload }) => {
+const applyOrderCouponToCart = async ({
+  userId,
+  shopId,
+  payload,
+  discountApplyAmount,
+}) => {
   const query = {
     cart_userId: userId,
     "cart_orders.order_shopId": shopId,
@@ -229,6 +234,10 @@ const applyOrderCoupon = async ({ userId, shopId, payload }) => {
     $set: {
       "cart_orders.$[orderElem].order_coupon": payload,
     },
+    $inc: {
+      cart_voucherTotal: discountApplyAmount,
+      cart_grandTotal: discountApplyAmount * -1,
+    },
   };
   const options = {
     arrayFilters: [{ "orderElem.order_shopId": shopId }],
@@ -237,7 +246,11 @@ const applyOrderCoupon = async ({ userId, shopId, payload }) => {
   return await cartModel.updateOne(query, update, options).lean();
 };
 
-const cancelCouponCode = async ({ userId, shopId }) => {
+const cancelCouponCodeFromCart = async ({
+  userId,
+  shopId,
+  discountApplyAmount,
+}) => {
   const query = {
     cart_userId: userId,
     cart_state: CartStateEnum.ACTIVE,
@@ -246,6 +259,10 @@ const cancelCouponCode = async ({ userId, shopId }) => {
   const update = {
     $unset: {
       "cart_orders.$[orderElem].order_coupon": 1,
+    },
+    $inc: {
+      cart_grandTotal: discountApplyAmount,
+      cart_voucherTotal: discountApplyAmount * -1,
     },
   };
   const options = {
@@ -274,6 +291,6 @@ module.exports = {
   addProductToOrderProducts,
   deleteUserCart,
   removeProductFromUserCart,
-  applyOrderCoupon,
-  cancelCouponCode,
+  applyOrderCouponToCart,
+  cancelCouponCodeFromCart,
 };

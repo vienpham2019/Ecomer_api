@@ -6,6 +6,7 @@ const {
   getSelectData,
   getSortBy,
   getSkip,
+  convertToObjectIdMongoDB,
 } = require("../../utils");
 const { DiscountAppliesToEnum } = require("./discount.enum");
 const discountModel = require("./discount.model");
@@ -51,16 +52,11 @@ const findAllDiscountCodesSelect = async ({
 // Create
 
 const createDiscount = async (payload) => {
-  const {
-    discount_min_order_value,
-    discount_product_ids,
-    discount_applies_to,
-  } = payload;
-  payload.discount_min_order_value = discount_min_order_value || 0;
-  payload.discount_product_ids =
-    discount_applies_to === DiscountAppliesToEnum.ALL
-      ? []
-      : discount_product_ids;
+  const { discount_minOrderValue, discount_productIds, discount_appliesTo } =
+    payload;
+  payload.discount_minOrderValue = discount_minOrderValue || 0;
+  payload.discount_productIds =
+    discount_appliesTo === DiscountAppliesToEnum.ALL ? [] : discount_productIds;
 
   return await discountModel.create(payload);
 };
@@ -86,26 +82,50 @@ const updateDiscount = async ({
   return updateDiscountResult;
 };
 
-const cancleDiscountUsersUsed = async ({ discountId, userId }) => {
-  return await discountModel.findByIdAndUpdate(discountId, {
-    $pull: {
-      discount_users_used: userId,
-    },
-    $inc: {
-      discount_used_count: -1,
-    },
-  });
+const cancelDiscountForUser = async ({ discountId, userId }) => {
+  return await discountModel.updateOne(
+    { _id: discountId },
+    {
+      $pull: {
+        discount_userUsePending: userId,
+      },
+      $inc: {
+        discount_usePendingCount: -1,
+      },
+    }
+  );
+};
+
+const applyDiscountForUser = async ({ discountId, userId }) => {
+  return await discountModel.updateOne(
+    { _id: convertToObjectIdMongoDB(discountId) },
+    {
+      $push: {
+        discount_userUsePending: userId,
+      },
+      $inc: {
+        discount_usePendingCount: 1,
+      },
+    }
+  );
 };
 
 const addDiscountUsersUsed = async ({ discountId, userId }) => {
-  return await discountModel.findByIdAndUpdate(discountId, {
-    $push: {
-      discount_users_used: userId,
-    },
-    $inc: {
-      discount_used_count: 1,
-    },
-  });
+  return await discountModel.updateOne(
+    { _id: convertToObjectIdMongoDB(discountId) },
+    {
+      $push: {
+        discount_usersUsed: userId,
+      },
+      $pull: {
+        discount_userUsePending: userId,
+      },
+      $inc: {
+        discount_usePendingCount: -1,
+        discount_usedCount: 1,
+      },
+    }
+  );
 };
 
 // Delete
@@ -123,7 +143,8 @@ module.exports = {
   findAllDiscountCodesUnSelect,
   findAllDiscountCodesSelect,
   createDiscount,
-  cancleDiscountUsersUsed,
+  cancelDiscountForUser,
+  applyDiscountForUser,
   addDiscountUsersUsed,
   updateDiscount,
   deleteDiscountCode,

@@ -5,7 +5,6 @@ const {
   NotFoundError,
   ForbiddenError,
 } = require("../core/error.response");
-const { getCartByUserId } = require("../models/cart/cart.repo");
 const {
   DiscountAppliesToEnum,
   DiscountTypeEnum,
@@ -15,7 +14,8 @@ const {
   createDiscount,
   findAllDiscountCodesUnSelect,
   findAllDiscountCodesSelect,
-  cancleDiscountUsersUsed,
+  cancelDiscountForUser,
+  applyDiscountForUser,
   addDiscountUsersUsed,
   updateDiscount,
   deleteDiscountCode,
@@ -57,13 +57,13 @@ class DiscountService {
       discount_shopId: convertToObjectIdMongoDB(shopId),
     });
 
-    if (!foundDiscount?.discount_is_active) {
+    if (!foundDiscount?.discountIsActive) {
       throw new BadRequestError("Discount not exists");
     }
 
-    const { discount_applies_to, discount_product_ids } = foundDiscount;
+    const { discount_appliesTo, discount_productIds } = foundDiscount;
     let products;
-    if (discount_applies_to === DiscountAppliesToEnum.ALL) {
+    if (discount_appliesTo === DiscountAppliesToEnum.ALL) {
       products = await findAllProducts({
         filter: {
           product_shop: convertToObjectIdMongoDB(shopId),
@@ -74,10 +74,10 @@ class DiscountService {
         sort,
         select: ["product_name"],
       });
-    } else if (discount_applies_to === DiscountAppliesToEnum.SPECIFIC) {
+    } else if (discount_appliesTo === DiscountAppliesToEnum.SPECIFIC) {
       products = await findAllProducts({
         filter: {
-          _id: { $in: discount_product_ids },
+          _id: { $in: discount_productIds },
           isPublished: true,
         },
         limit,
@@ -97,14 +97,14 @@ class DiscountService {
   }) {
     const filter = {
       discount_shopId: convertToObjectIdMongoDB(shopId),
-      discount_is_active: true,
+      discount_isActive: true,
     };
     const select = [
       "discount_name",
       "discount_description",
       "discount_code",
-      "discount_start_date",
-      "discount_end_date",
+      "discount_startDate",
+      "discount_endDate",
       "discount_type",
       "discount_value",
       "-_id",
@@ -143,48 +143,53 @@ class DiscountService {
     });
     if (!foundDiscount) throw new NotFoundError("Coupon code not exists!");
     const {
-      discount_is_active,
-      discount_max_uses,
-      discount_used_count,
-      discount_start_date,
-      discount_end_date,
-      discount_max_uses_per_user,
-      discount_users_used,
-      discount_min_order_value,
-      discount_product_ids,
-      discount_applies_to,
+      discount_isActive,
+      discount_maxUses,
+      discount_usedCount,
+      discount_startDate,
+      discount_endDate,
+      discount_maxUsesPerUser,
+      discount_usePendingCount,
+      discount_usersUsed,
+      discount_minOrderValue,
+      discount_productIds,
+      discount_appliesTo,
       discount_shopId,
+      discount_type,
+      discount_value,
     } = foundDiscount;
 
     // Check for avaliable coupon code
-    if (discount_used_count >= discount_max_uses) {
+    if (
+      discount_maxUses &&
+      discount_usedCount + discount_usePendingCount >= discount_maxUses
+    ) {
       throw new BadRequestError(
         `Discount code has exceeded the max number of times can use`
       );
     }
     // check for user already use discount and base on discount_max_per_user
-    const numUserUseDiscount = discount_users_used.filter(
+    const numUserUseDiscount = discount_usersUsed.filter(
       (userUsedId) => userUsedId === userId
     ).length;
-    if (numUserUseDiscount >= discount_max_uses_per_user) {
+    if (numUserUseDiscount >= discount_maxUsesPerUser) {
       throw new BadRequestError(
         `You has exceeded the max number of times can use this coupon code`
       );
     }
 
     // check for date
-    if (new Date() < new Date(discount_start_date)) {
+    if (new Date() < new Date(discount_startDate)) {
       throw new BadRequestError(
-        `Coupon code start from ${discount_start_date} and end at ${discount_end_date}`
+        `Coupon code start from ${discount_startDate} and end at ${discount_endDate}`
       );
     }
-    if (!discount_is_active)
+    if (!discount_isActive)
       throw new BadRequestError("Coupon code has expired!");
-    if (discount_max_uses < 1)
-      throw new BadRequestError("Coupon code are out!");
+    if (discount_maxUses < 1) throw new BadRequestError("Coupon code are out!");
     if (
-      new Date() < new Date(discount_start_date) ||
-      new Date() > new Date(discount_end_date)
+      new Date() < new Date(discount_startDate) ||
+      new Date() > new Date(discount_endDate)
     ) {
       throw new BadRequestError("Coupon code has expired!");
     }
@@ -198,13 +203,11 @@ class DiscountService {
         productId: product.product_id,
       });
       if (foundProduct) {
-        if (discount_applies_to === DiscountAppliesToEnum.ALL) {
+        if (discount_appliesTo === DiscountAppliesToEnum.ALL) {
           discountProductIds.push(foundProduct._id);
           subTotal += product.product_quantity * foundProduct.product_price;
         } else {
-          if (
-            discount_product_ids.some((id) => id.equals(product.product_id))
-          ) {
+          if (discount_productIds.some((id) => id.equals(product.product_id))) {
             discountProductIds.push(foundProduct._id);
             subTotal += product.product_quantity * foundProduct.product_price;
           }
@@ -212,35 +215,31 @@ class DiscountService {
       }
     }
 
-    if (subTotal < discount_min_order_value) {
+    if (subTotal < discount_minOrderValue) {
       throw new BadRequestError(
-        `The minimum spend for this coupon is ${discount_min_order_value}`
+        `The minimum spend for this coupon is ${discount_minOrderValue}`
       );
     }
 
-    const addUserUsed = await addDiscountUsersUsed({
-      discountId: foundDiscount._id,
-      userId,
-    });
-
-    if (!addUserUsed) {
-      throw new ForbiddenError(
-        `Can't get amout by discount code. Please try again!`
-      );
+    let discountApplyAmount = 0;
+    if (discount_type === DiscountTypeEnum.FIXED) {
+      discountApplyAmount = discount_value;
+    } else if (discount_type === DiscountTypeEnum.PERCENTAGE) {
+      discountApplyAmount = subTotal * (discount_value / 100);
     }
 
-    return foundDiscount;
+    return { foundDiscount, discountApplyAmount };
   }
 
   // Create
   static async createDiscountCode(payload) {
-    const { discount_start_date, discount_end_date, discount_code } = payload;
+    const { discount_startDate, discount_endDate, discount_code } = payload;
 
-    payload.discount_start_date = new Date(discount_start_date);
-    payload.discount_end_date = new Date(discount_end_date);
+    payload.discount_startDate = new Date(discount_startDate);
+    payload.discount_endDate = new Date(discount_endDate);
 
     // Check for valid date
-    if (isInValidDate(payload.discount_start_date, payload.discount_end_date)) {
+    if (isInValidDate(payload.discount_startDate, payload.discount_endDate)) {
       throw new BadRequestError("Invalid discount dates!");
     }
 
@@ -252,15 +251,15 @@ class DiscountService {
       throw new BadRequestError("Discount exists!");
     }
 
-    if (payload.discount_applies_to == DiscountAppliesToEnum.SPECIFIC) {
-      payload.discount_product_ids = removeDuplicatesInArray(
-        payload.discount_product_ids
+    if (payload.discount_appliesTo == DiscountAppliesToEnum.SPECIFIC) {
+      payload.discount_productIds = removeDuplicatesInArray(
+        payload.discount_productIds
       );
       const invalidProductIds = await checkForValidProductIds({
-        payload: payload.discount_product_ids,
+        payload: payload.discount_productIds,
         shopId: payload.discount_shopId,
       });
-      if (invalidProductIds.length < payload.discount_product_ids.length) {
+      if (invalidProductIds.length < payload.discount_productIds.length) {
         throw new BadRequestError(
           "Some of the products are not published or do not exist!"
         );
@@ -282,18 +281,18 @@ class DiscountService {
     }
 
     // check if discount expire
-    if (new Date(foundDiscount.discount_end_date) < new Date()) {
+    if (new Date(foundDiscount.discount_endDate) < new Date()) {
       throw new BadRequestError("Discount has expired. Cannot update.");
     }
-    payload.discount_product_ids = removeDuplicatesInArray(
-      payload.discount_product_ids
+    payload.discount_productIds = removeDuplicatesInArray(
+      payload.discount_productIds
     );
-    if (payload.discount_product_ids) {
+    if (payload.discount_productIds) {
       const invalidProductIds = await checkForValidProductIds({
-        payload: payload.discount_product_ids,
+        payload: payload.discount_productIds,
         shopId: payload.discount_shopId,
       });
-      if (invalidProductIds.length < payload.discount_product_ids.length) {
+      if (invalidProductIds.length < payload.discount_productIds.length) {
         throw new BadRequestError(
           "Some of the products are not published or do not exist!"
         );
@@ -303,7 +302,7 @@ class DiscountService {
 
     // Check for discount start then can't update discount code
     if (payload.discount_code) {
-      if (new Date(foundDiscount.discount_start_date) <= new Date()) {
+      if (new Date(foundDiscount.discount_startDate) <= new Date()) {
         throw new BadRequestError(
           "Discount already start. Cannot update discount code"
         );
@@ -318,15 +317,15 @@ class DiscountService {
     }
 
     // check for valid date
-    let { discount_start_date, discount_end_date } = payload;
-    if (discount_start_date || discount_end_date) {
-      if (!discount_start_date) {
-        discount_start_date = foundDiscount.discount_start_date;
+    let { discount_startDate, discount_endDate } = payload;
+    if (discount_startDate || discount_endDate) {
+      if (!discount_startDate) {
+        discount_startDate = foundDiscount.discount_startDate;
       }
-      if (!discount_end_date) {
-        discount_end_date = foundDiscount.discount_end_date;
+      if (!discount_endDate) {
+        discount_endDate = foundDiscount.discount_endDate;
       }
-      if (isInValidDate(discount_start_date, discount_end_date)) {
+      if (isInValidDate(discount_startDate, discount_endDate)) {
         throw new BadRequestError("Invalid discount dates!");
       }
     }
@@ -338,17 +337,17 @@ class DiscountService {
   }
 
   static async applyDiscountCode({ discount, userId }) {
-    const addUserUsed = await addDiscountUsersUsed({
+    const applyDiscount = await applyDiscountForUser({
       discountId: discount._id,
       userId,
     });
 
-    if (!addUserUsed) {
+    if (!applyDiscount) {
       throw new ForbiddenError(
         `Can't get amout by discount code. Please try again!`
       );
     }
-    return addUserUsed;
+    return applyDiscount;
   }
 
   static async cancelCouponCode({ code, userId }) {
@@ -357,20 +356,18 @@ class DiscountService {
     });
 
     if (!foundDiscount) throw new BadRequestError("Discount doesn't existst");
-    if (!foundDiscount.discount_users_used.includes(userId)) {
-      throw new BadRequestError();
+    console.log(foundDiscount.discount_userUsePending);
+    if (!foundDiscount.discount_userUsePending.includes(userId)) {
+      throw new BadRequestError(`user not include`);
     }
-    const cancleUserUsed = await cancleDiscountUsersUsed({
+    const cancelUserUsed = await cancelDiscountForUser({
       discountId: foundDiscount._id,
       userId,
     });
-    if (!cancleUserUsed) {
+    if (!cancelUserUsed) {
       throw new ForbiddenError(`Can't cancle coupon code. Please try again!`);
     }
-    return {
-      acknowledged: true,
-      discountCancleCount: 1,
-    };
+    return cancelUserUsed;
   }
 
   // Delete
