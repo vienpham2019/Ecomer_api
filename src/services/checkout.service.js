@@ -5,6 +5,7 @@ const {
   applyOrderCouponToCart,
   cancelCouponCodeFromCart,
 } = require("../models/cart/cart.repo");
+const { findProductByShopId } = require("../models/product/product.repo");
 const CartService = require("./cart.service");
 const DiscountService = require("./discount.service");
 
@@ -74,6 +75,26 @@ class CheckoutService {
       shopId,
       discountApplyAmount,
     });
+  }
+
+  static async orderByUser({ userId }) {
+    const foundCart = await CartService._validateCartOrders({ userId });
+    if (foundCart?.cart_orders.length === 0) {
+      throw new BadRequestError(`No order`);
+    }
+    for (let order of foundCart.cart_orders) {
+      for (let product of order.order_products) {
+        let foundProduct = await findProductByShopId({
+          shopId: order.order_shopId,
+          productId: product.product_id,
+        });
+        if (foundProduct.product_price != product.price) {
+          throw new BadRequestError(
+            `Product has update price please go back to Cart to confirm.`
+          );
+        }
+      }
+    }
   }
 }
 
