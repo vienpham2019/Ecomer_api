@@ -8,6 +8,7 @@ const {
 const { findProductByShopId } = require("../models/product/product.repo");
 const CartService = require("./cart.service");
 const DiscountService = require("./discount.service");
+const { acquireLock, releaseLock } = require("./redis.service");
 
 class CheckoutService {
   static async applyCoupon({ userId, shopId, code }) {
@@ -90,11 +91,26 @@ class CheckoutService {
         });
         if (foundProduct.product_price != product.price) {
           throw new BadRequestError(
-            `Product has update price please go back to Cart to confirm.`
+            `Product has update please go back to Cart to confirm.`
+          );
+        }
+        const keyLock = await acquireLock(
+          product.product_id,
+          product.product_quantity,
+          foundCart._id
+        );
+
+        if (keyLock) {
+          await releaseLock(keyLock);
+        } else {
+          throw new BadRequestError(
+            `Product has update please go back to Cart to confirm.`
           );
         }
       }
     }
+
+    // Create new order
   }
 }
 

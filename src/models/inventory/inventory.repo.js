@@ -1,4 +1,5 @@
 "use strict";
+const { convertToObjectIdMongoDB } = require("../../utils");
 const inventoryModel = require("./inventory.model");
 
 // Create
@@ -16,6 +17,28 @@ const createInventory = async ({
   });
 };
 
+// Update
+const reservationInventory = async ({ productId, quantity, cartId }) => {
+  const query = {
+    inven_productId: convertToObjectIdMongoDB(productId),
+    inven_stock: { $gte: quantity },
+  };
+  const updateSet = {
+    $inc: {
+      inven_stock: -quantity,
+    },
+    $push: {
+      inven_reservations: {
+        quantity,
+        cartId,
+        createOn: new Date(),
+      },
+    },
+  };
+  const options = { upsert: true, new: true };
+  return await inventoryModel.updateOne(query, updateSet, options);
+};
+
 // Delete
 const deleteInventory = async ({ productId, shopId }) => {
   const filter = { inven_productId: productId, inven_shopId: shopId };
@@ -24,5 +47,6 @@ const deleteInventory = async ({ productId, shopId }) => {
 
 module.exports = {
   createInventory,
+  reservationInventory,
   deleteInventory,
 };
