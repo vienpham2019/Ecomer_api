@@ -13,6 +13,7 @@ const {
   deleteDraftProduct,
 } = require("../../../models/product/product.repo");
 const { removeUndefinedNull } = require("../../../utils");
+const InventoryService = require("../../inventory.service");
 
 class Product {
   //   create product
@@ -35,10 +36,11 @@ class Product {
 
     if (!newProduct) throw new BadRequestError("Create new Product Error");
 
-    await createInventory({
+    await InventoryService.createInventory({
       productId: newProduct._id,
       shopId: newProduct.product_shopId,
       stock: newProduct.product_quantity,
+      location: "123 Main Street, Anytown, State, Country",
     });
 
     return newProduct;

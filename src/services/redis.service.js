@@ -3,6 +3,7 @@
 const redis = require("redis");
 const { promisify } = require("util");
 const { reservationInventory } = require("../models/inventory/inventory.repo");
+const InventoryService = require("./inventory.service");
 const redisClient = redis.createClient();
 
 const pexpire = promisify(redisClient.PEXPIRE).bind(redisClient);
@@ -16,7 +17,7 @@ const acquireLock = async (productId, quantity, cartId) => {
   for (let i = 0; i < retryTimes; i++) {
     const result = await setnxAsync(key, expireTime);
     if (result === 1) {
-      const isReversation = await reservationInventory({
+      const isReversation = await InventoryService.reservationInventory({
         productId,
         quantity,
         cartId,

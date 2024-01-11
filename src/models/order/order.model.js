@@ -25,8 +25,8 @@ const order_shippingSchema = new Schema(
 const orderSchema = new Schema(
   {
     order_userId: { type: Schema.ObjectId, ref: "User", required: true },
-    order_checkout: { type: order_checkoutSchema, default: {} },
-    order_shipping: { type: order_shippingSchema, default: {} },
+    order_checkout: { type: order_checkoutSchema, required: true },
+    order_shipping: { type: order_shippingSchema, required: true },
     order_payment: { type: Object, default: {} },
     order_products: { type: Array, default: [] },
     order_trackingNumber: { type: String, required: true },

@@ -83,34 +83,41 @@ class CheckoutService {
     if (foundCart?.cart_orders.length === 0) {
       throw new BadRequestError(`No order`);
     }
+    let isCheckOutProductFails = false;
+    const checkOutProductComplete = [];
     for (let order of foundCart.cart_orders) {
       for (let product of order.order_products) {
         let foundProduct = await findProductByShopId({
           shopId: order.order_shopId,
           productId: product.product_id,
         });
-        if (foundProduct.product_price != product.price) {
+        const { product_price, product_id, product_quantity } = foundProduct;
+        if (product_price != product.price) {
           throw new BadRequestError(
             `Product has update please go back to Cart to confirm.`
           );
         }
         const keyLock = await acquireLock(
-          product.product_id,
-          product.product_quantity,
+          product_id,
+          product_quantity,
           foundCart._id
         );
-
         if (keyLock) {
+          checkOutProductComplete.push(product_id);
           await releaseLock(keyLock);
         } else {
-          throw new BadRequestError(
-            `Product has update please go back to Cart to confirm.`
-          );
+          isCheckOutProductFails = true;
         }
       }
     }
 
     // Create new order
+
+    if (isCheckOutProductFails) {
+      throw new BadRequestError(
+        "Some products have been updated. Please return to your cart to confirm."
+      );
+    }
   }
 }
 
